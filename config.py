@@ -70,6 +70,8 @@ html, body, .stApp, [data-testid="stAppViewContainer"] {{
 }}
 [data-testid="stSidebar"] * {{ font-family: var(--sans); }}
 [data-testid="stSidebar"] .stRadio label p {{ font-size: 14px; }}
+/* 隐藏侧栏收起按钮：看板始终显示侧栏，避免误点后再也看不到导航 */
+[data-testid="stSidebarCollapseButton"] {{ display: none !important; }}
 .block-container {{ padding-top: 2.4rem; padding-bottom: 3rem; max-width: 1180px; }}
 
 h1, h2, h3, h4 {{ font-family: var(--serif); font-weight: 700; color: var(--ink); }}

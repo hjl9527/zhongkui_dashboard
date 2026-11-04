@@ -11,7 +11,8 @@ import charts as C
 from config import ACCENT, ACCENT2, CSS, GOLD, SENTI_CN, SENTI_COLOR, THEME_COLOR
 from data import load_demo, platform_kpis, theme_overall, theme_rank
 
-st.set_page_config(page_title="钟馗·舆情看板", page_icon="◆", layout="centered")
+st.set_page_config(page_title="钟馗·舆情看板", page_icon="◆", layout="centered",
+                   initial_sidebar_state="expanded")
 st.markdown(CSS, unsafe_allow_html=True)
 
 ROOT = Path(__file__).parent
