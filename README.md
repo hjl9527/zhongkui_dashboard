@@ -1,3 +1,13 @@
+---
+title: 钟馗舆情看板
+emoji: 📊
+colorFrom: red
+colorTo: gray
+sdk: streamlit
+app_file: app.py
+pinned: false
+---
+
 # 钟馗 · 舆情看板
 
 一支 15 分钟实机演示的社区舆论数据看板：B站 / 小红书 / 小黑盒 / 微博评论 **11,280 条** ＋ B站弹幕 **24,733 条**。
