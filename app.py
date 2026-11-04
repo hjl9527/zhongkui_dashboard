@@ -8,8 +8,6 @@ import pandas as pd
 import streamlit as st
 
 import charts as C
-import fastlane
-import tokenizer as T
 from config import ACCENT, ACCENT2, CSS, GOLD, SENTI_CN, SENTI_COLOR, THEME_COLOR
 from data import load_demo, platform_kpis, theme_overall, theme_rank
 
@@ -97,6 +95,7 @@ def _platform_rows(platform):
 
 @st.cache_data(show_spinner=False)
 def _label_words(platform, theme, label):
+    import tokenizer as T  # 延迟加载 jieba 词典，避免拖慢首屏
     src = _platform_rows(platform)
     src = src[(src["label"] == label) & (src["theme"] == theme)]
     counter = Counter()
@@ -137,6 +136,27 @@ PLATFORM_META = {
 }
 
 
+# ---------------------------------------------------------------- 结论速读
+@st.cache_data(show_spinner=False)
+def _summary_text():
+    """摘要 md 原文，去掉首行一级标题，避免与页头重复。"""
+    lines = (ROOT / "reports" / "executive-summary.md").read_text(encoding="utf-8").splitlines()
+    if lines and lines[0].startswith("# "):
+        lines = lines[1:]
+    return "\n".join(lines).strip()
+
+
+def page_brief(d=None):
+    masthead("BRIEF / 00", "先读结论：这次演示说明了什么",
+             "纯文字，先看判断再看数据；图表、明细与可下载 PDF 在后续页面。")
+    st.markdown(_summary_text())
+    st.markdown(
+        '<p class="note">本页与「研究报告」里的 PDF 同源；要核对数字，去「数据与口径」翻原始明细。'
+        '文字先出、图表后加载，是为减少首屏等待。</p>',
+        unsafe_allow_html=True,
+    )
+
+
 # ---------------------------------------------------------------- 概览
 def page_overview(d):
     stats = d["stats"]
@@ -146,8 +166,9 @@ def page_overview(d):
              "钟馗实机演示 · 舆论结构总览",
              "B站 / 小红书 / 小黑盒 / 微博评论 11,280 条 ＋ B站弹幕 24,733 条｜15 分 53 秒演示")
 
-    st.markdown('<p class="note">加载提示：首次打开、刷新或切换页面时，图表与数据需要几秒加载，'
-                '内容未出现时请稍候——不是页面故障。</p>', unsafe_allow_html=True)
+    st.markdown('<p class="note">加载提示：首次打开、刷新或切换页面时，图表与数据需要几秒加载。'
+                '若白屏或转圈超过 10 秒、或提示 TypeError，请按 Ctrl + Shift + R 强制刷新；'
+                '多刷 1–2 次即可恢复，已缓存的模块第二次会更快。</p>', unsafe_allow_html=True)
 
     st.markdown(
         '<div class="verdict"><span class="tag">核心判断</span><br>'
@@ -508,6 +529,7 @@ def page_report(d=None):
 
 # ---------------------------------------------------------------- 上传
 def page_upload():
+    import fastlane  # 仅上传页需要，延迟加载
     masthead("REUSE / 07", "上传你的 CSV，复用同一套工作流",
              "支持评论或弹幕；自动识别文本 / 时间 / 平台列，词典打标 + TF-IDF 主题 + 时间轴。")
     st.markdown(
@@ -589,11 +611,12 @@ def main():
                     'letter-spacing:.06em;padding:4px 0 2px">钟馗 · 舆情看板</div>', unsafe_allow_html=True)
         st.markdown('<p class="note" style="margin:0 0 16px">COMMUNITY INTELLIGENCE<br>'
                     '15 分钟实机演示 · 四平台评论 + B站弹幕</p>', unsafe_allow_html=True)
-        st.markdown('<p class="note" style="margin:0 0 12px">首次打开或刷新后，图表需要几秒加载；'
-                    '内容未出现时请稍候，不是页面故障。</p>', unsafe_allow_html=True)
+        st.markdown('<p class="note" style="margin:0 0 12px">首次打开或刷新后，图表与表格需要几秒加载；'
+                    '若出现白屏、转圈或 TypeError，按 Ctrl + Shift + R 强制刷新 1–2 次即可恢复，'
+                    '已加载的模块会被浏览器缓存，第二次通常更快。</p>', unsafe_allow_html=True)
         source = st.radio("数据源", [DEMO_SOURCE, UPLOAD_SOURCE])
         if source == DEMO_SOURCE:
-            pages = ["概览", "情感结构", "弹幕时间轴", "主题与平台", "数据与口径", "研究报告"]
+            pages = ["结论速读", "概览", "情感结构", "弹幕时间轴", "主题与平台", "数据与口径", "研究报告"]
         else:
             pages = ["上传与运行", "结果预览"]
         page = st.radio("页面", pages)
@@ -606,9 +629,14 @@ def main():
         page_upload() if page == "上传与运行" else page_fast_result()
         return
 
+    if page == "结论速读":
+        page_brief()
+        return
+
     d = load_demo()
-    {"概览": page_overview, "情感结构": page_sentiment, "弹幕时间轴": page_timeline,
-     "主题与平台": page_themes, "数据与口径": page_data, "研究报告": page_report}[page](d)
+    {"概览": page_overview, "情感结构": page_sentiment,
+     "弹幕时间轴": page_timeline, "主题与平台": page_themes,
+     "数据与口径": page_data, "研究报告": page_report}[page](d)
 
 
 if __name__ == "__main__":
