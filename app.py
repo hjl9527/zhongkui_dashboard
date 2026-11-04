@@ -389,7 +389,9 @@ def page_themes(d):
     df = d["topics"][["platform", "theme", "size", "share", "top_words", "mean_sentiment"]].copy()
     df = df[df["theme"] != "未建模"]
     f1, f2 = st.columns(2)
-    pf = f1.multiselect("平台", df["platform"].unique().tolist(), default=[])
+    all_plats = df["platform"].unique().tolist()
+    pf = f1.multiselect("平台", all_plats,
+                        default=["小黑盒"] if "小黑盒" in all_plats else all_plats[:1])
     tf = f2.multiselect("主题", df["theme"].unique().tolist(), default=[])
     if pf:
         df = df[df["platform"].isin(pf)]
@@ -422,8 +424,9 @@ def page_data(d):
 
     sec("01", "评论明细", "按平台、情感、层级、主题筛选；表格可直接复制到 Excel。")
     c1, c2, c3, c4 = st.columns(4)
-    plat = c1.multiselect("平台", sorted(d["comments"]["platform"].unique()),
-                          default=sorted(d["comments"]["platform"].unique()))
+    plats = sorted(d["comments"]["platform"].unique())
+    plat = c1.multiselect("平台", plats,
+                          default=["小黑盒"] if "小黑盒" in plats else plats[:1])
     senti = c2.multiselect("情感", ["positive", "neutral", "negative"], default=[])
     level = c3.multiselect("评论层级", ["一级", "二级"], default=[])
     theme = c4.multiselect("主题", d["comments"]["theme"].unique().tolist(), default=[])
@@ -438,13 +441,14 @@ def page_data(d):
     st.dataframe(df[["platform", "text", "情感", "theme", "层级"]].rename(
         columns={"platform": "平台", "text": "文本", "theme": "主题"}),
         hide_index=True, width="stretch", height=340)
-    st.caption(f"当前 {len(df):,} 行；共 {stats['comments']:,} 行。")
+    st.caption(f"当前 {len(df):,} 行；共 {stats['comments']:,} 行。默认只看小黑盒，"
+               "需要全量时在「平台」里多选其他平台。")
     st.download_button("导出当前筛选 CSV", df.to_csv(index=False).encode("utf-8-sig"),
                        file_name="comments_view.csv", mime="text/csv")
 
     sec("02", "弹幕明细", "按时间、情感与主题筛选，用于回看某个窗口。")
     c4, c5, c6 = st.columns([1.4, 1, 1])
-    rng = c4.slider("时间范围（分钟）", 0.0, 16.0, (0.0, 16.0), 0.5)
+    rng = c4.slider("时间范围（分钟）", 0.0, 16.0, (6.0, 8.0), 0.5)
     dm_senti = c5.multiselect("弹幕情感", ["positive", "neutral", "negative", "surprise", "ritual"], default=[])
     dm_theme = c6.multiselect("主题", d["danmaku"]["theme"].unique().tolist(), default=[])
     dm = d["danmaku"]
