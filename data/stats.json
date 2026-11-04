@@ -1,0 +1,28 @@
+{
+  "comments": 11280,
+  "danmaku": 24733,
+  "duration_sec": 953,
+  "danmaku_per_min": 1557.0,
+  "platforms": [
+    {
+      "name": "B站",
+      "comments": 4531,
+      "reply_share": 0.8358
+    },
+    {
+      "name": "小红书",
+      "comments": 3279,
+      "reply_share": 0.2513
+    },
+    {
+      "name": "小黑盒",
+      "comments": 2045,
+      "reply_share": 0.2196
+    },
+    {
+      "name": "微博",
+      "comments": 1425,
+      "reply_share": 0.0554
+    }
+  ]
+}
