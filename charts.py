@@ -96,10 +96,12 @@ def fig_theme_heat(themes, overall):
     piv = piv.where(n >= 30)          # 样本过少的格子留白，避免 1.00 这类假信号
     piv = piv.reindex(order)
     cols = [c for c in PLATFORM_ORDER if c in piv.columns]
+    # 样本不足的格子留白，文字也置空，避免出现 NaN
+    txt = [["" if pd.isna(v) else f"{v:.2f}" for v in row] for row in piv[cols].values]
     fig = go.Figure(go.Heatmap(
         z=piv[cols].values, x=cols, y=piv.index.tolist(),
         colorscale=[[0, ACCENT2], [0.5, "#f1ece2"], [1, ACCENT]], zmid=0,
-        text=piv[cols].round(2).values, texttemplate="%{text}",
+        text=txt, texttemplate="%{text}",
         textfont=dict(size=10, color="#4a443c"),
         hovertemplate="%{y} · %{x}<br>情感均值 %{z:.2f}<extra></extra>",
         colorbar=dict(thickness=10, outlinewidth=0, tickfont=dict(size=10, color=MUTED),
@@ -191,9 +193,10 @@ def fig_timeline(windows, peaks=None, height=470, duration=None):
                 fig.add_annotation(x=x, y=0.5, yref="paper", text=p["rank"], showarrow=False,
                                    font=dict(size=9, color=color), xshift=10, yshift=-6)
     fig = base(fig, height=height, legend=True)
-    fig.update_layout(margin=dict(l=10, r=12, t=44, b=16),
-                      legend=dict(orientation="h", x=1.0, xanchor="right", y=1.0, yanchor="bottom",
-                                  bgcolor="rgba(248,246,242,.9)", font=dict(size=10, color=MUTED)))
+    # 图例移到图下方：放右上方会压住「弹幕量（10 秒窗口）」子图标题
+    fig.update_layout(margin=dict(l=10, r=12, t=44, b=88),
+                      legend=dict(orientation="h", x=0.5, xanchor="center", y=-0.16, yanchor="top",
+                                  bgcolor="rgba(0,0,0,0)", font=dict(size=10, color=MUTED)))
     return fig
 
 
