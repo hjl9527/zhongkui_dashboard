@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
-"""把 reports/executive-summary.md 排成一页 A4：reports/executive-summary.pdf + .jpg。
+"""把 reports/executive-summary.md 排成 A4 版式：reports/executive-summary.pdf + .jpg。
 
 md 是可编辑的正文来源，本脚本只负责排版：改字改数请改 md，再跑本脚本。
+结构按「章节 + 段落/小标题/表格/列表」自动流式排版，放不下自动翻页。
 字体用系统微软雅黑（正文）/ 雅黑粗体（标题），保存前做字形子集化，体积可控。
 """
 import os
@@ -35,6 +36,10 @@ BOLD_NAME = "yhbd"
 _REG = pymupdf.Font(fontfile=MSYH)
 _BOLD = pymupdf.Font(fontfile=MSYHBD)
 
+BODY = 8.6          # 正文字号
+LEAD = 1.55         # 正文行距倍数
+BOTTOM = FH - 44    # 版心底线
+
 
 # ---------------------------------------------------------------- 文本
 def measure(s, size, bold=False):
@@ -65,25 +70,11 @@ def wrap(s, size, width, bold=False):
             cur = cand
     if cur.strip():
         lines.append(cur)
-    # 避免行首出现收尾标点
     for i in range(1, len(lines)):
         while lines[i][:1] in "，。、；：！？）」’”%":
             lines[i - 1] += lines[i][0]
             lines[i] = lines[i][1:]
     return lines
-
-
-def para(page, x, y, width, s, size=7.5, color=INK, bold=False, lead=1.35,
-         align="left"):
-    """从基线 y 开始画一段，返回下一段的基线。"""
-    lh = size * lead
-    for ln in wrap(s, size, width, bold):
-        if align == "center":
-            draw_text(page, x + width / 2, y, ln, size, color, bold, "center")
-        else:
-            draw_text(page, x, y, ln, size, color, bold)
-        y += lh
-    return y
 
 
 def hline(page, x0, x1, y, color=LINE, w=0.8):
@@ -95,6 +86,37 @@ def rect(page, r, fill=None, stroke=None, w=0.8):
 
 
 # ---------------------------------------------------------------- md 解析
+NUM = ("1.", "2.", "3.", "4.", "5.", "6.", "7.", "8.", "9.")
+
+
+def blockify(lines):
+    """把一节里的行切成 (kind, payload)：para / sub / table / list。"""
+    out, i, n = [], 0, len(lines)
+    while i < n:
+        s = lines[i]
+        if s.startswith("|"):
+            rows = []
+            while i < n and lines[i].startswith("|"):
+                cells = [c.strip() for c in lines[i].strip("|").split("|")]
+                rows.append(cells)
+                i += 1
+            rows = [r for r in rows if not set("".join(r)) <= set("-: ")]
+            out.append(("table", rows))
+        elif s.startswith("### "):
+            out.append(("sub", s[4:].strip()))
+            i += 1
+        elif s.startswith("- ") or s[:2] in NUM:
+            items = []
+            while i < n and (lines[i].startswith("- ") or lines[i][:2] in NUM):
+                items.append(lines[i])
+                i += 1
+            out.append(("list", items))
+        else:
+            out.append(("para", s))
+            i += 1
+    return out
+
+
 def parse_md(path):
     raw = Path(path).read_text(encoding="utf-8")
     title, header, sections, cur = "", [], [], None
@@ -107,135 +129,138 @@ def parse_md(path):
             sections.append(cur)
         elif s.strip():
             (cur["lines"] if cur else header).append(s.strip())
-
-    def paras(lines):
-        return [l for l in lines if not l.startswith("|")]
-
-    def table(lines):
-        rows = [l for l in lines if l.startswith("|")]
-        cells = [[c.strip() for c in r.strip("|").split("|")] for r in rows]
-        return [c for c in cells if not set("".join(c)) <= set("-: ")]
-
-    def bullets(lines):
-        return [[p.strip() for p in l.lstrip("- ").split("｜")] for l in lines
-                if l.startswith("- ")]
-
-    def items(lines):
-        """### 小标题 + 正文段落，用于信号卡与行动卡。"""
-        out, head = [], None
-        for l in lines:
-            if l.startswith("### "):
-                head = l[4:].strip()
-                out.append({"title": head, "body": ""})
-            elif out:
-                out[-1]["body"] += l
-        return out
-
-    by = {s["name"]: s["lines"] for s in sections}
-    names = list(by)
-    date = ""
-    for h in header:
-        if h.startswith("日期："):
-            date = h[3:].strip()
-
     return {
         "title": title,
-        "subtitle": header[0] if header else "",
-        "meta": header[1] if len(header) > 1 else "",
-        "date": date,
-        "verdict": "".join(paras(by.get("核心判断", []))),
-        "kpi": bullets(by.get("关键数字", [])),
-        "signals": items(by.get("四个信号", [])),
-        "chart1": table(by.get(names[3], [])),
-        "chart2": table(by.get(names[4], [])),
-        "ptable": table(by.get(names[5], [])),
-        "actions": items(by.get("下一步", [])),
-        "footnote": "".join(paras(by.get("口径与可靠性", []))),
+        "header": header,
+        "sections": [{"name": s["name"], "blocks": blockify(s["lines"])}
+                     for s in sections],
     }
 
 
+# ---------------------------------------------------------------- 页面状态
+STATE = {"doc": None, "page": None, "y": 0, "title": "", "section": ""}
+
+
+def start_page(refill=True):
+    page = STATE["doc"].new_page(width=FW, height=FH)
+    page.insert_font(fontname=REG_NAME, fontfile=MSYH)
+    page.insert_font(fontname=BOLD_NAME, fontfile=MSYHBD)
+    rect(page, (0, 0, FW, FH), fill=(1, 1, 1))
+    if refill:
+        head = (STATE["section"] + "（续）") if STATE["section"] else STATE["title"]
+        draw_text(page, MX, 42, head, 9, GRAY, bold=True)
+        hline(page, MX, FW - MX, 48, color=LINE)
+        STATE["y"] = 62
+    else:
+        STATE["y"] = 46
+    STATE["page"] = page
+    return page
+
+
+def ensure(need, gap=0):
+    """确保当前页还能放下 need；放不下就翻页。"""
+    if STATE["y"] + need > BOTTOM:
+        start_page()
+        return True
+    STATE["y"] += gap
+    return False
+
+
 # ---------------------------------------------------------------- 版式块
-def section_title(page, x, y, title):
-    draw_text(page, x, y, title, 9, INK, bold=True)
+def draw_section(name):
+    ensure(52, gap=14)
+    STATE["section"] = name
+    page, y = STATE["page"], STATE["y"]
+    rect(page, (MX, y - 10, MX + 3, y + 1), fill=RED)
+    draw_text(page, MX + 10, y, name, 10.5, INK, bold=True)
+    hline(page, MX, FW - MX, y + 6, color=LINE)
+    STATE["y"] = y + 18
 
 
-def bar_chart(page, x, y, w, h, title, rows, colors):
-    """rows: [[平台, 一级值, 二级值], ...]，表头首行。"""
-    head, body = rows[0], rows[1:]
-    labels = [r[0] for r in body]
-    series = [(head[i + 1], {r[0]: float(r[i + 1]) for r in body})
-              for i in range(len(head) - 1)]
-
-    rect(page, (x, y, x + w, y + h), fill=PANEL)
-    section_title(page, x + 11, y + 17, title)
-    lx = x + 11
-    for si, (name, _) in enumerate(series):
-        rect(page, (lx, y + 23, lx + 8, y + 31), fill=colors[si])
-        draw_text(page, lx + 12, y + 30, name, 7.5, INK)
-        lx += measure(name, 7.5) + 28
-
-    maxv = max(v for _, vals in series for v in vals.values())
-    axis_max = 50 if maxv <= 50 else maxv * 1.06
-    plot_x = x + 46
-    plot_w = w - 46 - 26
-    top = y + 40
-    row_h = (h - 40 - 10) / len(labels)
-    for i, lab in enumerate(labels):
-        ry = top + i * row_h
-        draw_text(page, x + 11, ry + row_h / 2 + 3, lab, 7.5, INK)
-        bh = 9
-        for si, (_, vals) in enumerate(series):
-            by = ry + (row_h - 2 * bh - 3) / 2 + si * (bh + 3)
-            bw = plot_w * vals[lab] / axis_max
-            rect(page, (plot_x, by, plot_x + bw, by + bh), fill=colors[si])
-            draw_text(page, plot_x + bw + 4, by + bh / 2 + 2.7,
-                      f"{vals[lab]:.1f}", 7.5, INK)
+def draw_para(text, size=BODY, color=INK, lead=LEAD, indent=0):
+    for ln in wrap(text, size, CW - indent):
+        lh = size * lead
+        ensure(lh + 2)
+        draw_text(STATE["page"], MX + indent, STATE["y"] + size, ln, size, color)
+        STATE["y"] += lh
+    STATE["y"] += 1
 
 
-def hbar(page, x, y, w, h, title, rows, color=GREEN):
-    """rows: [[名称, 数值], ...]，表头首行。"""
-    head, body = rows[0], rows[1:]
-    rect(page, (x, y, x + w, y + h), fill=PANEL)
-    section_title(page, x + 11, y + 17, title)
-
-    maxv = max(float(r[1]) for r in body)
-    label_w, num_w, bar_pad = 62, 34, 11
-    bar_w = w - bar_pad - label_w - num_w
-    top = y + 30
-    row_h = (h - 30 - 10) / len(body)
-    bah = 9
-    for i, (name, val) in enumerate(body):
-        v = float(val)
-        by = top + i * row_h + (row_h - bah) / 2
-        draw_text(page, x + bar_pad, by + bah / 2 + 2.7, name, 7.5, INK)
-        bw = bar_w * v / (maxv * 1.02)
-        rect(page, (x + bar_pad + label_w, by, x + bar_pad + label_w + bw, by + bah),
-             fill=color)
-        draw_text(page, x + bar_pad + label_w + bw + 4, by + bah / 2 + 2.7,
-                  f"{v:.3f}", 7.5, INK)
+def draw_sub(text):
+    lh = 10 * 1.45
+    ensure(lh + 6, gap=4)
+    for i, ln in enumerate(wrap(text, 9.2, CW, bold=True)):
+        draw_text(STATE["page"], MX, STATE["y"] + 9.2, ln, 9.2, RED if i == 0 else INK,
+                  bold=True)
+        STATE["y"] += lh
+    STATE["y"] += 2
 
 
-def kpi_card(page, x, y, w, number, label, sub, accent):
-    rect(page, (x, y, x + w, y + 52), fill=PANEL)
-    rect(page, (x, y, x + 3, y + 52), fill=accent)
-    draw_text(page, x + 11, y + 21, number, 15, accent, bold=True)
-    draw_text(page, x + 11, y + 35, label, 8.5, INK, bold=True)
-    draw_text(page, x + 11, y + 46, sub, 7, GRAY)
+def draw_list(items):
+    for it in items:
+        draw_para(it, indent=11)
 
 
-def signal_card(page, x, y, w, h, title, body, accent):
-    rect(page, (x, y, x + w, y + h), fill=PANEL)
-    rect(page, (x, y, x + w, y + 17), fill=CREAM)
-    draw_text(page, x + 9, y + 12, title, 8, accent, bold=True)
-    para(page, x + 9, y + 30, w - 18, body, size=7.4, color=INK, lead=1.38)
+def col_widths(rows, total, size=7.7):
+    n = max(len(r) for r in rows)
+    weights = []
+    for j in range(n):
+        w = 0
+        for r in rows:
+            cell = r[j] if j < len(r) else ""
+            w = max(w, measure(cell, size, bold=True))
+        weights.append(max(w, 46))
+    k = total / sum(weights)
+    return [w * k for w in weights]
 
 
-def action_card(page, x, y, w, h, no, title, body, accent):
-    rect(page, (x, y, x + w, y + h), fill=PANEL)
-    rect(page, (x, y, x + w, y + 2.6), fill=accent)
-    draw_text(page, x + 9, y + 17, no, 8, accent, bold=True)
-    draw_text(page, x + 26, y + 17, title, 8, INK, bold=True)
-    para(page, x + 9, y + 32, w - 18, body, size=7.2, color=INK, lead=1.4)
+def draw_table(rows):
+    if not rows:
+        return
+    size = 7.6
+    widths = col_widths(rows, CW, size)
+    head_h = 16
+
+    def row_h(r):
+        return max(13, max(len(wrap(r[j] if j < len(r) else "", size,
+                                    widths[j] - 8)) for j in range(len(widths))) * 10.2 + 4)
+
+    # 小表整体不拆页：放不下就整张翻到下一页
+    total = head_h + sum(row_h(r) for r in rows[1:])
+    if total <= BOTTOM - 62 and STATE["y"] + total > BOTTOM:
+        start_page()
+
+    def draw_head():
+        ensure(head_h + 4, gap=4)
+        cx = MX
+        for j, cell in enumerate(rows[0]):
+            rect(STATE["page"], (cx, STATE["y"], cx + widths[j], STATE["y"] + head_h),
+                 fill=INK)
+            draw_text(STATE["page"], cx + 4, STATE["y"] + 11.5, cell, size, (1, 1, 1),
+                      bold=True)
+            cx += widths[j]
+        STATE["y"] += head_h
+
+    draw_head()
+    for i, r in enumerate(rows[1:]):
+        cells = [wrap(r[j] if j < len(r) else "", size, widths[j] - 8) for j in
+                 range(len(widths))]
+        rh = row_h(r)
+        if STATE["y"] + rh > BOTTOM:
+            start_page()
+            draw_head()
+        rect(STATE["page"], (MX, STATE["y"], FW - MX, STATE["y"] + rh),
+             fill=PANEL if i % 2 == 0 else (1, 1, 1))
+        cx = MX
+        for j, lines in enumerate(cells):
+            ty = STATE["y"] + 10.5
+            for ln in lines:
+                draw_text(STATE["page"], cx + 4, ty, ln, size, INK if j == 0 else GRAY,
+                          bold=(j == 0))
+                ty += 10.2
+            cx += widths[j]
+        STATE["y"] += rh
+    STATE["y"] += 8
 
 
 # ---------------------------------------------------------------- 组装
@@ -244,100 +269,41 @@ def build():
     REPORTS.mkdir(parents=True, exist_ok=True)
 
     doc = pymupdf.open()
-    page = doc.new_page(width=FW, height=FH)
-    page.insert_font(fontname=REG_NAME, fontfile=MSYH)
-    page.insert_font(fontname=BOLD_NAME, fontfile=MSYHBD)
-    rect(page, (0, 0, FW, FH), fill=(1, 1, 1))
+    STATE["doc"] = doc
+    STATE["title"] = d["title"]
+    page = start_page(refill=False)
 
-    y = 46
+    # 抬头
+    y = 52
     draw_text(page, MX, y, d["title"], 19, INK, bold=True)
-    draw_text(page, FW - MX, y + 1, d["date"], 8, GRAY, align="right")
-    y += 25
-    draw_text(page, MX, y, d["subtitle"], 11, RED, bold=True)
-    y += 18
-    draw_text(page, MX, y, d["meta"], 8.5, GRAY)
-    y += 11
-    hline(page, MX, FW - MX, y, color=RED, w=1.4)
-    y += 12
+    y += 24
+    for j, line in enumerate(d["header"]):
+        size, color, bold = (11, RED, True) if j == 0 else (8.4, GRAY, False)
+        for ln in wrap(line, size, CW, bold):
+            draw_text(page, MX, y, ln, size, color, bold)
+            y += size * 1.45
+        y += 3
+    hline(page, MX, FW - MX, y + 2, color=RED, w=1.4)
+    STATE["y"] = y + 16
 
-    # 核心判断
-    lines = wrap(d["verdict"], 8.5, CW - 22)
-    bh = 30 + len(lines) * 12.4 + 10
-    rect(page, (MX, y, FW - MX, y + bh), fill=CREAM)
-    rect(page, (MX, y, MX + 3, y + bh), fill=RED)
-    draw_text(page, MX + 11, y + 16, "核心判断", 8, RED, bold=True)
-    para(page, MX + 11, y + 30, CW - 22, d["verdict"], size=8.5, color=INK, lead=1.46)
-    y += bh + 10
+    for sec in d["sections"]:
+        draw_section(sec["name"])
+        for kind, payload in sec["blocks"]:
+            if kind == "para":
+                draw_para(payload)
+            elif kind == "sub":
+                draw_sub(payload)
+            elif kind == "list":
+                draw_list(payload)
+            elif kind == "table":
+                draw_table(payload)
 
-    # 关键数字
-    kw = (CW - 3 * 4) / 4
-    accents = [RED, RED, GREEN, GOLD]
-    for i, item in enumerate(d["kpi"][:4]):
-        kpi_card(page, MX + i * (kw + 4), y, kw, *item[:3], accents[i])
-    y += 52 + 11
-
-    # 四个信号
-    gap = 8
-    cw2 = (CW - gap) / 2
-    ch = 82
-    accents = [RED, GREEN, RED, GREEN]
-    for i, sig in enumerate(d["signals"][:4]):
-        cx = MX + (i % 2) * (cw2 + gap)
-        cy = y + (i // 2) * (ch + gap)
-        signal_card(page, cx, cy, cw2, ch, sig["title"], sig["body"], accents[i])
-    y += 2 * ch + gap + 10
-
-    # 两张图
-    gh = 150
-    c1 = d["chart1"]
-    c2 = d["chart2"]
-    bar_chart(page, MX, y, cw2, gh, "一级 vs 二级评论 · 正向占比（%）", c1, [RED, GRAY])
-    hbar(page, MX + cw2 + gap, y, cw2, gh, "主题分歧度 TOP 6（越高越分裂）", c2)
-    y += gh + 11
-
-    # 平台表
-    pt = d["ptable"]
-    head, rows = pt[0], pt[1:]
-    section_title(page, MX, y, "平台角色一览（PV 一套全平台同版，海报分版）")
-    y += 8
-    cols = [52, 108, 226, CW - 52 - 108 - 226]
-    cx = MX
-    for name, w in zip(head, cols):
-        rect(page, (cx, y, cx + w, y + 15), fill=INK)
-        draw_text(page, cx + 5, y + 10.5, name, 7.5, (1, 1, 1), bold=True)
-        cx += w
-    y += 15
-    rh = 19
-    for i, r in enumerate(rows):
-        rect(page, (MX, y, FW - MX, y + rh), fill=PANEL if i % 2 == 0 else (1, 1, 1))
-        cx = MX
-        for j, (cell, w) in enumerate(zip(r, cols)):
-            draw_text(page, cx + 5, y + 13, cell, 7.5,
-                      INK if j == 0 else (GREEN if j == 3 else GRAY), bold=(j == 0))
-            cx += w
-        y += rh
-    y += 11
-
-    # 下一步
-    ah = 64
-    aw3 = (CW - 2 * gap) / 3
-    accents = [RED, GREEN, GOLD]
-    for i, act in enumerate(d["actions"][:3]):
-        no, title = act["title"].split(" ", 1)
-        action_card(page, MX + i * (aw3 + gap), y, aw3, ah, no, title, act["body"],
-                    accents[i])
-    y += ah + 10
-
-    # 尾注与页脚
-    hline(page, MX, FW - MX, y, color=LINE)
-    y += 5
-    end = para(page, MX, y + 7, CW, d["footnote"], size=7, color=GRAY, lead=1.45)
-
-    fy = max(FH - 28, end + 8)
-    draw_text(page, MX, fy, "数据分析 / 社区舆论", 7, GRAY)
-    draw_text(page, FW - MX, fy, "内部参考 · 非对外发布", 7, GRAY, align="right")
-    if end > fy - 8:
-        print("warning: 内容压到页脚，end y =", round(end, 1))
+    # 页脚与页码
+    pages = len(doc)
+    for i, pg in enumerate(doc):
+        fy = FH - 24
+        draw_text(pg, MX, fy, "数据分析 / 社区舆论", 7, GRAY)
+        draw_text(pg, FW - MX, fy, f"{i + 1} / {pages}", 7, GRAY, align="right")
 
     out = REPORTS / "executive-summary.pdf"
     doc.subset_fonts()
@@ -346,12 +312,14 @@ def build():
     doc.close()
 
     p = pymupdf.open(out)
+    for i, pg in enumerate(p):
+        pg.get_pixmap(dpi=110).save(REPORTS / f"executive-summary-p{i + 1}.jpg")
+    p.close()
+    # 兼容旧文件名：首页缩略图
+    p = pymupdf.open(out)
     p[0].get_pixmap(dpi=120).save(REPORTS / "executive-summary.jpg")
     p.close()
-    print("saved", out, os.path.getsize(out) // 1024, "KB")
-    print("saved", REPORTS / "executive-summary.jpg",
-          os.path.getsize(REPORTS / "executive-summary.jpg") // 1024, "KB")
-    print("bottom baseline y =", round(y, 1), "/ page", FH)
+    print("saved", out, os.path.getsize(out) // 1024, "KB", "pages", pages)
 
 
 if __name__ == "__main__":

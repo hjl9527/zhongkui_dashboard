@@ -3,8 +3,8 @@ title: 钟馗舆情看板
 emoji: 📊
 colorFrom: red
 colorTo: gray
-sdk: streamlit
-app_file: app.py
+sdk: docker
+app_port: 8501
 pinned: false
 ---
 

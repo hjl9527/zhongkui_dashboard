@@ -4,12 +4,9 @@ import html
 from collections import Counter
 from pathlib import Path
 
-import pandas as pd
 import streamlit as st
 
-import charts as C
 from config import ACCENT, ACCENT2, CSS, GOLD, SENTI_CN, SENTI_COLOR, THEME_COLOR
-from data import load_demo, platform_kpis, theme_overall, theme_rank
 
 st.set_page_config(page_title="钟馗·舆情看板", page_icon="◆", layout="centered",
                    initial_sidebar_state="expanded")
@@ -87,6 +84,7 @@ def word_chips(pairs):
 
 @st.cache_data(show_spinner=False)
 def _platform_rows(platform):
+    from data import load_demo
     d = load_demo()
     if platform == "B站弹幕":
         return d["danmaku"]
@@ -129,18 +127,17 @@ def mmss(sec):
 
 
 PLATFORM_META = {
-    "小黑盒": ("评估型：只看战斗与技术", "PV 同版；不作投放重点，仅作负面采集"),
-    "小红书": ("审美型：画面与角色占比最高", "PV 同版；海报强调画面质感"),
-    "微博": ("表态型：期待与情绪", "PV 同版；海报放预约入口 + 定档"),
-    "B站": ("玩梗型：短句与二创", "PV 同版；海报做角色特写"),
-    "B站弹幕": ("签到型：情绪同步", "保留仪式梗生态，但不要把梗当评价"),
+    "小黑盒": ("战斗评估 + 原创性质疑", "先立新作锚点，用新作的差别回应换皮争议"),
+    "小红书": ("战斗 + 画面审美", "强调画面质感：光照、材质、场景"),
+    "微博": ("战斗 + 期待表态", "放预约入口 + 定档信息，便于转发扩散"),
+    "B站": ("战斗 + 技术/角色", "角色特写与设定图优先，留出二创空间"),
+    "B站弹幕": ("仪式玩梗为主", "保留仪式梗生态，但不要把梗当评价"),
 }
 
 
-# ---------------------------------------------------------------- 结论速读
-@st.cache_data(show_spinner=False)
+# ---------------------------------------------------------------- 项目说明与摘要
 def _summary_text():
-    """摘要 md 原文，去掉首行一级标题，避免与页头重复。"""
+    """摘要 md 原文，去掉首行一级标题，避免与页头重复。不做缓存，改 md 后刷新即可生效。"""
     lines = (ROOT / "reports" / "executive-summary.md").read_text(encoding="utf-8").splitlines()
     if lines and lines[0].startswith("# "):
         lines = lines[1:]
@@ -148,11 +145,15 @@ def _summary_text():
 
 
 def page_brief(d=None):
-    masthead("BRIEF / 00", "先读结论：这次演示说明了什么",
-             "纯文字，先看判断再看数据；图表、明细与可下载 PDF 在后续页面。")
+    masthead("BRIEF / 00", "项目说明与摘要",
+             "先说这份看板做了什么、数据从哪来，再给这次演示的结论；文末可下载 PDF 摘要。")
     st.markdown(_summary_text())
+    pdf = ROOT / "reports" / "executive-summary.pdf"
+    if pdf.exists():
+        st.download_button("下载摘要 PDF", pdf.read_bytes(),
+                           file_name="钟馗实机演示_舆情摘要.pdf", mime="application/pdf")
     st.markdown(
-        '<p class="note">本页与「研究报告」里的 PDF 同源；要核对数字，去「数据与口径」翻原始明细。'
+        '<p class="note">本页文字即摘要 PDF 的内容；要核对数字，去「数据与口径」翻原始明细。'
         '文字先出、图表后加载，是为减少首屏等待。</p>',
         unsafe_allow_html=True,
     )
@@ -160,28 +161,41 @@ def page_brief(d=None):
 
 # ---------------------------------------------------------------- 概览
 def page_overview(d):
+    import charts as C
+    from data import theme_overall
     stats = d["stats"]
     themes = d["themes"]
     overall = theme_overall(themes)
     masthead("COMMUNITY INTELLIGENCE / 01",
              "钟馗实机演示 · 舆论结构总览",
-             "B站 / 小红书 / 小黑盒 / 微博评论 11,280 条 ＋ B站弹幕 24,733 条｜15 分 53 秒演示")
+             "通过爬虫采集在b站、小黑盒、微博、小红书中官号最新 15 分 53 秒实机演示中评论 11,280 条 ＋ b站弹幕 24,733 条")
 
-    st.markdown('<p class="note">加载提示：首次打开、刷新或切换页面时，图表与数据需要几秒加载。'
-                '若白屏或转圈超过 10 秒、或提示 TypeError，请按 Ctrl + Shift + R 强制刷新；'
+    st.markdown('<p class="note">加载提示：首次打开、刷新或切换页面时，图表与数据需要十几秒加载。'
+                '若白屏或转圈超过 10 秒、或提示 TypeError、乱码，请按 Ctrl + Shift + R 强制刷新；'
                 '多刷 1–2 次即可恢复，已缓存的模块第二次会更快。</p>', unsafe_allow_html=True)
 
     st.markdown(
+        '<div class="card"><h4>数据来源</h4>'
+        '<p class="note">针对黑神话钟馗最新 15 分 53 秒实机演示，爬取 B 站、微博、'
+        '小红书、小黑盒上官号实机演示视频下评论与b站弹幕，逐条打上正向 / 中性 / 负向三种情感标签'
+        '，再把文本聚成 13 个主题进行分析。清洗后可用文本共 36,013 。</p></div>',
+        unsafe_allow_html=True)
+
+    kpi_row([
+        ("1,359.7 万", "B站播放", "点赞 97.1 万 · 评论 11.6 万 · 转发 50.2 万"),
+        ("239 万", "微博话题阅读", "点赞 1.5 万 · 评论 1801 · 转发 3430"),
+        ("1.81 万", "小黑盒点赞", "评论 7288 · 转发 7288"),
+        ("4.8 万", "小红书点赞", "评论 4184 · 转发2.9w"),
+    ])
+
+    st.markdown(
         '<div class="verdict"><span class="tag">核心判断</span><br>'
-        "这是一次 <b>高热度、低文本深度的围观型传播</b>。出现次数最多的 <b>8 条弹幕</b>"
-        "（按完全相同的文案计，如“来了来了”“帅”“牛逼”）合计占全部弹幕的 <b>64.1%</b>；"
-        "若把重复出现 2 次以上的弹幕都算上，则占 <b>73.7%</b>。"
-        "说明多数人在完成“到场签到”和情绪同步，而不是分析内容。<br>"
-        "但围观不等于没有信息量：真正能判断产品力的信号，是 B站 <b>186 条百字长评</b>"
-        "和小黑盒的战斗类讨论。<br>"
-        "用户 <b>最关注战斗</b>，<b>最正向评价画面</b>，<b>最分裂的是角色与战斗</b>。"
-        "负面几乎都落在具体的画面、资产与战斗手感上；剧情在这支演示里着墨本来就不多，"
-        "相关讨论又常藏在长评里，拆句后容易被误判，因此不把“剧情口碑”写进本轮结论。"
+        "播放与互动都在头部量级，<b>实机演出曝光度较高</b>。但文字层面多数人只是打卡和附和社区情绪："
+        "出现最多的 <b>8 条弹幕</b>（“来了来了”“帅”“牛逼”）就占全部弹幕的 <b>64.1%</b>——"
+        "<b>观众围观不等于认同作品内容</b>。<br>"
+        "实机演示的主题信息主要来自两处：B站 <b>186 条百字长评</b>，和小黑盒的战斗类讨论。<br>"
+        "一句话总结：<b>最关注战斗，最认可画面与音乐，最分裂的是角色与战斗</b>。"
+        "风险点在“像不像悟空”的区分度担忧，以及穿模、音效复用这类制作精度，对剧情讨论较少。"
         "</div>",
         unsafe_allow_html=True,
     )
@@ -194,47 +208,63 @@ def page_overview(d):
         (f"{n_themes}", "统一主题", "547 簇归并"),
     ])
 
-    sec("01", "两个先看的结构信号", "一级评论和二级评论是两种人：主楼表态，楼中楼争议。")
+    sec("01", "两个结构信号", "一级评论和二级评论是两种人：主楼表态，情感色彩鲜明，楼中楼多为讨论争议。")
     legend_chips([("一级评论", ACCENT), ("二级评论", GOLD)])
     c1, c2 = st.columns(2)
     with c1:
         chart(C.fig_level_positive(d["summary"]))
-        st.markdown('<p class="note">微博一级正向 41.8%，B站一级 42.5%；但 B站二级负向 12.8%，'
+        st.markdown('<p class="note"><b>一级评论正向占比远高于二级评论。</b> 微博一级正向 41.8%，B站一级 42.5%；但 B站二级负向 12.8%，'
                     '已反超一级的 5.9%。</p>', unsafe_allow_html=True)
     with c2:
         chart(C.fig_theme_variance(overall))
         st.markdown('<p class="note">分歧最大的六个主题集中在 0.41–0.49，彼此差距很小，排名不必细究；'
-                    '有用的是方向：角色形象、战斗打击感在平台之间正负翻转，画面美术在四个平台都为正。</p>',
+                    '有用的是方向：方差可能来自平台內正负双方讨论，也可能来自不同平台存在的情感差异。<b>角色形象、战斗打击感在平台之间正负翻转，说明不同平台观点不一，画面美术在四个平台都为正，说明美术收到一致认可。</b></p>',
                     unsafe_allow_html=True)
 
-    sec("02", "五个数据集，五种阅读方式", "主题分布不是“多一点少一点”，而是结构性差异。")
+    sec("02", "五种数据源，五种主题侧重", "第一名都是战斗，真正的差异在第二、第三名。")
     d2 = d["topics"][d["topics"]["theme"] != "未建模"].copy()
     d2["s"] = d2["share"] / d2.groupby("platform")["share"].transform("sum")
-    top1 = d2.sort_values("s").groupby("platform").tail(1).set_index("platform")
-    hhi = (d2["s"] ** 2).groupby(d2["platform"]).sum()
+    # 一个主题由多个簇组成：先按「平台 × 主题」合计份额，再取 Top1、算集中度
+    g2 = d2.groupby(["platform", "theme"], as_index=False)["s"].sum()
+    hhi = (g2["s"] ** 2).groupby(g2["platform"]).sum()
+    # 「其他/综合」是未归入具体主题的杂项桶，不参与排名（但计入分母）
+    # 多数平台的第一名都是战斗，差异体现在第二、第三名，所以展示前三
+    top3 = (g2[~g2["theme"].isin(["其他/综合"])]
+            .sort_values("s", ascending=False).groupby("platform").head(3))
+    evidence = {
+        p: "<br>".join(f"{r.theme} {fmt_pct(r.s)}" for r in g.itertuples())
+        for p, g in top3.groupby("platform")
+    }
     mean = (d["themes"][d["themes"]["theme"] != "未建模"]
             .assign(w=lambda x: x["n"] * x["mean_sentiment"])
             .groupby("platform_name")[["w", "n"]].sum().pipe(lambda x: x["w"] / x["n"]))
     rows = []
     for p in ["小黑盒", "小红书", "微博", "B站", "B站弹幕"]:
-        if p not in top1.index:
+        if p not in evidence:
             continue
-        read, advice = PLATFORM_META[p]
+        focus, advice = PLATFORM_META[p]
         m = "—" if p == "B站弹幕" else f"{mean.get(p, 0):+.3f}"
-        rows.append([p, f"{top1.loc[p, 'theme']} {fmt_pct(top1.loc[p, 's'])}",
-                     f"{1 / hhi.loc[p]:.1f}", m, read, advice])
-    editorial_table(["平台", "Top1 主题（占比）", "话题数", "情绪分", "阅读方式", "海报建议（PV 全平台同版）"],
+        rows.append([p, evidence[p], f"{1 / hhi.loc[p]:.1f}", m, focus, advice])
+    editorial_table(["平台", "前 3 主题（占比）", "有效话题数", "情绪分", "主题侧重", "宣传物料投放建议"],
                     rows, ["left", "left", "right", "right", "left", "left"])
+    st.markdown(
+        '<p class="note">占比按「平台 × 主题」合计后列内归一，与「主题与平台 · 讨论结构」同一口径；'
+        '「其他/综合」是杂项桶（占全部文本 36.6%），不参与排名但计入分母。'
+        '四个评论平台的第一名都是战斗，<b>平台差异要综合top前三考虑</b>：小黑盒倾向与前作差异的换皮讨论，小红书接着谈画面，'
+        '微博多为期待发售信号，B站接着谈技术细节与角色。「有效话题数」＝ 1 ÷ Σ(各主题份额²)，越大越分散，'
+        '可理解为“相当于几个主题在平均分配讨论”，不是主题个数。</p>',
+        unsafe_allow_html=True,
+    )
 
-    sec("03", "后续宣发建议", "基于上面的结构信号，按投入产出比排序。")
+    sec("03", "后续宣发建议", "基于上面的结构信号，给出投入产出比重要度排序。")
     a1, a2, a3 = st.columns(3)
     for col, no, title, body in [
         (a1, "建议 01", "在物料里建立新作的基调锚点",
-         "不用专发设定声明；开头 3–5 秒用题材、美术与战斗语言，让人看出它与《悟空》是两款游戏。"),
+         "不用专发设定声明；开头 3–5 秒用题材、美术与战斗语言，让人看出它与《悟空》是两款游戏，且与竞品有亮眼差异化。"),
         (a2, "建议 02", "画面与民俗音乐做工作室标签",
          "阴天写实光照、傩戏打击乐几乎不卷入换皮争议，是跨作品复用最安全的两个资产。"),
-        (a3, "建议 03", "战斗手感暂不做主打",
-         "关注度最高，但小黑盒负向 31.6% 已反超正向 23.7%。等调优后再正面沟通。"),
+        (a3, "建议 03", "战斗手感暂不做主打宣发",
+         "关注度最高，但小黑盒负向 31.6% 已反超正向 23.7%。等调优后再正面宣发。"),
     ]:
         col.markdown(f'<div class="action"><div class="no">{no}</div><h4>{title}</h4>'
                      f'<p>{body}</p></div>', unsafe_allow_html=True)
@@ -248,35 +278,37 @@ def page_overview(d):
 
 # ---------------------------------------------------------------- 情感
 def page_sentiment(d):
-    masthead("SENTIMENT / 02", "情感结构：谁在表态，谁在争吵",
+    import charts as C
+    from data import theme_overall
+    masthead("SENTIMENT / 02", "情感结构：一级评论表态，楼中楼讨论",
              "把平台、评论层级、主题三个维度拆开，避免被 24,733 条弹幕的平均值稀释。")
     overall = theme_overall(d["themes"])
 
-    sec("01", "平台 × 评论层级", "同一平台的主楼与楼中楼，情绪方向可能相反。")
+    sec("01", "平台 × 评论层级", "同一平台的主楼与楼中楼，情绪方向可能相反。一级评论抛出倾向明确的观点，二级评论中讨论甚至争吵")
     legend_chips([("正向", SENTI_COLOR["positive"]), ("中性", SENTI_COLOR["neutral"]),
                   ("负向", SENTI_COLOR["negative"])])
     chart(C.fig_level_stack(d["summary"]))
     st.markdown(
         '<p class="note">四个平台的二级正向率都明显低于一级：B站 42.5% → 14.0%、小红书 36.8% → 13.6%、'
-        '小黑盒 32.2% → 12.0%、微博 41.8% → 16.5%。小红书二级情绪分已转负（−0.07）；小黑盒相反，'
-        '一级负向 24.7% 为四组最高，硬核玩家在主楼就直接下判断。微博二级仅 79 条，方向可参考、不宜细读。</p>',
+        '小黑盒 32.2% → 12.0%、微博 41.8% → 16.5%。小红书二级情绪分已转负（−7%）；小黑盒相反，'
+        '一级负向 24.7% 为四组最高，核心玩家在主楼就直接下判断。微博二级仅 79 条，微博用户评论往往较少楼中讨论，方向可参考、不宜细读。</p>',
         unsafe_allow_html=True)
 
-    sec("02", "主题 × 平台", "红色为正向，墨绿为负向，越深越强；空白格为样本少于 30 条。")
+    sec("02", "主题 × 平台", "红色为正向，墨绿为负向，越深越强；空白格为样本少于 30 条。正向评论计+1，负向评论计-1，中立评论计0")
     chart(C.fig_theme_heat(d["themes"], overall))
     st.markdown(
-        '<p class="note">同一主题换平台就换方向：战斗打击感在评论区几乎贴着 0（B站 +0.08、小红书 +0.03、'
-        '微博 +0.04），只有小黑盒转负（−0.08）；换皮争议在微博 +0.40，在小红书、小黑盒却是 −0.10；'
-        '角色形象微博 +0.27、小红书 −0.08。说明差异来自人群，而不是主题本身。'
+        '<p class="note">同一主题在不同平台情感方向可能反转，只在<b>营销社区、画面美术、期待对比</b>三个主题上一致正向：战斗打击感在评论区几乎贴着 0（B站 +0.08、小红书 +0.03、'
+        '微博 +0.04），并在小黑盒转负（−0.08）；换皮争议在微博 +0.40，在小红书、小黑盒却是 −0.10；'
+        '角色形象微博 +0.27、小红书 −0.08。说明这些主题难有客观标准，差异来自人群主观判断。'
         '弹幕整列偏高（+0.38 ~ +0.49）是渠道特性，不与评论列横向比较。</p>',
         unsafe_allow_html=True)
 
-    sec("03", "合并后的主题净情感", "按样本量加权，剔除“未建模”后比较。")
+    sec("03", "合并后的主题净情感", "按样本量加权，剔除“未建模”后比较。鼠标移到对应柱状图可看正负情感数值")
     chart(C.fig_theme_net(overall))
     st.markdown(
         '<p class="note">按净值排：画面美术 +24.2、期待对比 +23.3、音乐音效 +22.3 居前；'
         '战斗打击感与换皮争议 +12.0、剧情叙事 +11.5、角色形象 +7.4 垫底。'
-        '两个读法：角色形象是正 24.2% / 负 16.9% 的“两边都厚”，属分裂而非好评；'
+        '需要注意角色形象是正 24.2% / 负 16.9% 的“两头情感都高”，存在争论；'
         '剧情叙事仅 227 条（占比最低），负向 9.3% 不算高，但出现即多为“内容缺失”批评，当风险信号读。</p>',
         unsafe_allow_html=True,
     )
@@ -284,17 +316,18 @@ def page_sentiment(d):
 
 # ---------------------------------------------------------------- 时间轴
 def page_timeline(d):
-    masthead("TIMELINE / 03", "弹幕时间轴：全片的注意力与情绪节奏",
-             "10 秒窗口 / 2 秒步进。上图看“什么时候人多”，下图看“那一刻是正还是负”。")
+    import charts as C
+    masthead("TIMELINE / 03", "弹幕时间轴：观众注意力与情绪节奏",
+             "10 秒窗口 / 2 秒步进。上图看弹幕量，下图看情绪方向。")
 
     chart(C.fig_timeline(d["windows"], d["peaks"], duration=d["stats"]["duration_sec"]))
     st.markdown(
-        f'<p class="note">全片 {d["stats"]["duration_sec"]} 秒；共 {d["stats"]["danmaku"]:,} 条弹幕，'
+        f'<p class="note">全片 {d["stats"]["duration_sec"]} 秒；共爬取 {d["stats"]["danmaku"]:,} 条弹幕，'
         f'平均每分钟 {int(d["stats"]["danmaku_per_min"]):,} 条。峰值先看量，再看情感指数是否同向。</p>',
         unsafe_allow_html=True)
     st.markdown(
-        '<p class="note">口径说明：P / V 是人工回看挑选的“内容型情绪”窗口（情感值为 3 窗口居中平滑值），'
-        '不是情感曲线的统计极值，且情感峰只从非刷屏窗口里选。像 12:22–12:32（N4，1,591 条、正向 94%、情感 0.963）'
+        '<p class="note">口径说明：P / V 是人工回看挑选的“内容型情绪”窗口，去除了仪式类、刷屏玩梗弹幕如“来了”之类的情感影响， '
+        '因此与情感高峰略有错位。因P / V 只从非刷屏窗口里选。像 12:22–12:32（N4，1,591 条、正向 94%、情感 0.963）'
         '这种全场齐刷同一句正面弹幕的段落，情感虽高，但属于情绪同步而不是内容讨论，'
         '归入弹幕量峰 N，不重复进情感峰；0:00–0:10（N1，4,075 条、96% 仪式）同理。'
         '所以“弹幕量峰”和“情感峰”位置错开是口径设计，不是漏标。</p>',
@@ -337,14 +370,16 @@ def page_timeline(d):
 
     st.markdown(
         '<p class="note">注意 5:48 的“假峰”：706 条弹幕、91% 为仪式刷屏（“放火烧山，牢底坐穿”），'
-        '它是集体玩梗，不是情绪高点。把仪式峰误判为负向谷，是这类分析最常见的错误。</p>',
+        '它是集体玩梗，不是情绪高点，此处把玩梗误判为负向谷。</p>',
         unsafe_allow_html=True,
     )
 
 
 # ---------------------------------------------------------------- 主题
 def page_themes(d):
-    masthead("TOPICS / 04", "主题与平台：内容要素的复用价值",
+    import charts as C
+    from data import theme_overall
+    masthead("TOPICS / 04", "主题与平台：舆论关注焦的点",
              "13 个统一主题，由 547 个聚类簇归并；每个主题都能追到原始文本。")
     overall = theme_overall(d["themes"])
 
@@ -358,8 +393,8 @@ def page_themes(d):
     chart(C.fig_theme_share(d["topics"]))
 
     st.markdown(
-        '<p class="note" style="margin-top:14px">词云是全部文本合并后的高频词，不随 02 的主题切换；'
-        '评论可按平台单独看，也可四平台合并。分词已加载游戏专名词典（打击感、大蚌真君、换皮等）'
+        '<p class="note" style="margin-top:14px">词云是全部文本合并后的高频词，已分平台制图；'
+        '评论可按平台单独看，也可四平台合并。分词已加载自制游戏专名词典（打击感、大蚌真君、换皮、黑神话钟馗等）'
         '与哈工大停用词，过滤「一定 / 可能 / 一样」这类噪声。</p>', unsafe_allow_html=True)
     wc_options = {
         "评论 · 四平台合并": "wc_comments.jpg",
@@ -386,9 +421,8 @@ def page_themes(d):
         chart(C.fig_theme_platform(d["themes"], theme))
         sub = d["topics"][d["topics"]["theme"] == theme]
         doc = sub.sort_values("size", ascending=False).iloc[0] if len(sub) else None
-        if doc is not None and isinstance(doc["representative_docs"], str):
-            st.markdown(f'<p class="note">原文样例：{html.escape(doc["representative_docs"])}</p>',
-                        unsafe_allow_html=True)
+        
+        
     with c2:
         rep = rep_words(platform, theme)
         st.markdown('<div class="card"><h4>代表词 · 按情感拆分</h4>'
@@ -438,10 +472,10 @@ def page_data(d):
              "全部原始文本都在这里；替换同结构 CSV 即可复跑，上传入口见侧边栏。")
     stats = d["stats"]
     kpi_row([
-        (f"{stats['comments']:,}", "评论", "11,280 行全量入仓"),
-        (f"{stats['danmaku']:,}", "弹幕", "24,733 行全量入仓"),
+        (f"{stats['comments']:,}", "评论", "非全量数据"),
+        (f"{stats['danmaku']:,}", "弹幕", "非全量数据"),
         ("13", "统一主题", "人工确认命名"),
-        ("0.58–0.75", "交叉验证一致性", "第二模型复核"),
+        ("0.58–0.75", "交叉验证一致性", "另一AI模型复核"),
     ])
 
     sec("01", "评论明细", "按平台、情感、层级、主题筛选；表格可直接复制到 Excel。")
@@ -498,23 +532,11 @@ def page_data(d):
 
 # ---------------------------------------------------------------- 报告
 def page_report(d=None):
-    masthead("REPORTS / 06", "研究报告：数据背后的完整叙事",
-             "三份成品报告都在这里：一页摘要给决策者，总报告给运营，五问拆解给复盘。")
-    pick = st.radio("报告", ["一页摘要", "总报告", "五问拆解"], horizontal=True,
+    masthead("REPORTS / 06", "数据分析报告",
+             "两份成品报告：总报告与五问分析。摘要见「项目说明与摘要」，可在那里下载 PDF。")
+    pick = st.radio("报告", ["总报告", "五问分析"], horizontal=True,
                     label_visibility="collapsed")
     rp = ROOT / "reports"
-
-    if pick == "一页摘要":
-        pdf = rp / "executive-summary.pdf"
-        img = rp / "executive-summary.jpg"
-        if img.exists():
-            st.image(str(img), width="stretch")
-        if pdf.exists():
-            st.download_button("下载一页摘要 PDF", pdf.read_bytes(),
-                               file_name="钟馗实机演示_舆情摘要.pdf", mime="application/pdf")
-        else:
-            st.info("缺少 reports/executive-summary.pdf。")
-        return
 
     fname = "report.md" if pick == "总报告" else "five-question-analysis.md"
     path = rp / fname
@@ -569,6 +591,7 @@ def page_upload():
 
 
 def page_fast_result():
+    import charts as C
     res = st.session_state.get("fast")
     if not res:
         masthead("RESULT / 08", "结果预览", "还没有上传数据。")
@@ -617,7 +640,7 @@ def main():
                     '已加载的模块会被浏览器缓存，第二次通常更快。</p>', unsafe_allow_html=True)
         source = st.radio("数据源", [DEMO_SOURCE, UPLOAD_SOURCE])
         if source == DEMO_SOURCE:
-            pages = ["结论速读", "概览", "情感结构", "弹幕时间轴", "主题与平台", "数据与口径", "研究报告"]
+            pages = ["项目说明与摘要", "概览", "情感结构", "弹幕时间轴", "主题与平台", "数据与口径", "研究报告"]
         else:
             pages = ["上传与运行", "结果预览"]
         page = st.radio("页面", pages)
@@ -630,10 +653,11 @@ def main():
         page_upload() if page == "上传与运行" else page_fast_result()
         return
 
-    if page == "结论速读":
+    if page == "项目说明与摘要":
         page_brief()
         return
 
+    from data import load_demo
     d = load_demo()
     {"概览": page_overview, "情感结构": page_sentiment,
      "弹幕时间轴": page_timeline, "主题与平台": page_themes,
