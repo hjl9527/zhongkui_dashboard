@@ -218,7 +218,7 @@ def page_overview(d):
     with c2:
         chart(C.fig_theme_variance(overall))
         st.markdown('<p class="note">分歧最大的六个主题集中在 0.41–0.49，彼此差距很小，排名不必细究；'
-                    '有用的是方向：方差可能来自平台內正负双方讨论，也可能来自不同平台存在的情感差异。<b>角色形象、战斗打击感在平台之间正负翻转，说明不同平台观点不一，画面美术在四个平台都为正，说明美术收到一致认可。</b></p>',
+                    '有用的是方向：方差可能来自平台内正负双方讨论，也可能来自不同平台存在的情感差异。<b>角色形象、战斗打击感在平台之间正负翻转，说明不同平台观点不一，画面美术在四个平台都为正，说明美术受到一致认可。</b></p>',
                     unsafe_allow_html=True)
 
     sec("02", "五种数据源，五种主题侧重", "第一名都是战斗，真正的差异在第二、第三名。")
@@ -379,7 +379,7 @@ def page_timeline(d):
 def page_themes(d):
     import charts as C
     from data import theme_overall
-    masthead("TOPICS / 04", "主题与平台：舆论关注焦的点",
+    masthead("TOPICS / 04", "主题与平台：舆论关注焦点",
              "13 个统一主题，由 547 个聚类簇归并；每个主题都能追到原始文本。")
     overall = theme_overall(d["themes"])
 
